@@ -1,5 +1,5 @@
 // vercel-build.js
-// This script runs during the build step on Vercel to configure browser dependencies
+// This script runs during the build step on Vercel to configure dependencies
 
 const { execSync } = require('child_process');
 const fs = require('fs');
@@ -19,21 +19,78 @@ try {
     fs.mkdirSync(tmpDir, { recursive: true });
   }
   
-  // Skip browser installation on Vercel - we'll set puppeteer to work with externally provided Chrome
-  console.log('🔧 Configuring Puppeteer to use system Chrome in serverless environment...');
+  // Set NODE_ENV to production to avoid unnecessary dev dependencies
+  process.env.NODE_ENV = 'production';
   
-  // Make sure mermaid-cli is executable
-  const mmdcPath = path.join(process.cwd(), 'node_modules', '.bin', 'mmdc');
-  if (fs.existsSync(mmdcPath)) {
-    console.log('🔧 Setting permissions for mermaid-cli...');
-    try {
-      execSync(`chmod +x "${mmdcPath}"`, { stdio: 'inherit' });
-      console.log('✅ mermaid-cli permissions set');
-    } catch (error) {
-      console.warn('⚠️ Could not set permissions for mermaid-cli, but continuing:', error.message);
+  // Create a .npmrc file to skip problematic downloads
+  fs.writeFileSync(
+    path.join(process.cwd(), '.npmrc'),
+    'puppeteer_skip_chromium_download=true\n' +
+    'playwright_skip_browser_download=true\n'
+  );
+  console.log('✅ Created .npmrc to skip browser downloads');
+  
+  // Ensure mermaid-cli is properly installed and available
+  console.log('🔧 Checking mermaid-cli installation...');
+  
+  const packageJsonPath = path.join(process.cwd(), 'package.json');
+  if (fs.existsSync(packageJsonPath)) {
+    // Load the package.json file
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    
+    // Check if mermaid-cli is already in dependencies
+    const hasMermaidCli = packageJson.dependencies && packageJson.dependencies['@mermaid-js/mermaid-cli'];
+    
+    if (!hasMermaidCli) {
+      console.log('⚠️ @mermaid-js/mermaid-cli not found in package.json, adding it...');
+      if (!packageJson.dependencies) {
+        packageJson.dependencies = {};
+      }
+      packageJson.dependencies['@mermaid-js/mermaid-cli'] = '^11.4.2';
+      fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
+      
+      // Install the updated package.json
+      try {
+        console.log('🔧 Installing mermaid-cli...');
+        execSync('npm install --no-audit --no-fund --legacy-peer-deps', { stdio: 'inherit' });
+        console.log('✅ mermaid-cli installed successfully');
+      } catch (installError) {
+        console.warn('⚠️ Could not install mermaid-cli:', installError.message);
+      }
+    } else {
+      console.log('✅ @mermaid-js/mermaid-cli already in package.json');
     }
-  } else {
-    console.warn('⚠️ mmdc binary not found at expected location, it may need to be installed');
+  }
+  
+  // Create a symlink for easier access to mermaid-cli's index.js
+  const mmdcPath = path.join(process.cwd(), 'node_modules', '.bin', 'mmdc');
+  const mermaidCliDir = path.join(process.cwd(), 'node_modules', '@mermaid-js', 'mermaid-cli');
+  
+  if (!fs.existsSync(mmdcPath) && fs.existsSync(mermaidCliDir)) {
+    try {
+      const indexJsPath = path.join(mermaidCliDir, 'index.js');
+      
+      if (fs.existsSync(indexJsPath)) {
+        console.log('🔧 Creating mmdc command wrapper...');
+        
+        // Create a simple wrapper script that points to the index.js file
+        const wrapperDir = path.join(process.cwd(), 'node_modules', '.bin');
+        if (!fs.existsSync(wrapperDir)) {
+          fs.mkdirSync(wrapperDir, { recursive: true });
+        }
+        
+        const wrapperScript = `#!/usr/bin/env node
+require('${indexJsPath.replace(/\\/g, '\\\\')}');
+`;
+        
+        fs.writeFileSync(mmdcPath, wrapperScript);
+        fs.chmodSync(mmdcPath, '755'); // Make executable
+        
+        console.log('✅ Created mmdc command wrapper at:', mmdcPath);
+      }
+    } catch (symlinkError) {
+      console.warn('⚠️ Could not create mmdc wrapper:', symlinkError.message);
+    }
   }
   
   // Create puppeteer config for mermaid-cli that uses Chrome in Path
@@ -58,17 +115,9 @@ try {
   );
   console.log('✅ Created puppeteer-config.json with configuration for mermaid-cli');
   
-  // Create a .npmrc file to skip Puppeteer download
-  fs.writeFileSync(
-    path.join(process.cwd(), '.npmrc'),
-    'puppeteer_skip_chromium_download=true\n'
-  );
-  console.log('✅ Created .npmrc to skip Puppeteer browser download');
-  
   console.log('✅ Mermaid environment setup completed');
   
 } catch (error) {
   console.error('❌ Error setting up mermaid environment:', error);
   // Don't exit with error to allow build to continue
-  // process.exit(1);
 } 

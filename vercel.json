@@ -5,7 +5,7 @@
       "src": "package.json",
       "use": "@vercel/next",
       "config": {
-        "installCommand": "npm install --legacy-peer-deps",
+        "installCommand": "npm install --no-audit --no-fund --legacy-peer-deps",
         "buildCommand": "node vercel-build.js && next build"
       }
     }
@@ -13,7 +13,7 @@
   "env": {
     "NEXT_TELEMETRY_DISABLED": "1",
     "PUPPETEER_SKIP_CHROMIUM_DOWNLOAD": "true",
-    "PUPPETEER_SKIP_DOWNLOAD": "true",
+    "PLAYWRIGHT_BROWSERS_PATH": "0",
     "NODE_OPTIONS": "--max-old-space-size=3072"
   }
 } 

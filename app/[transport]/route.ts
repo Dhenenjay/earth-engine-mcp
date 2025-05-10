@@ -25,16 +25,27 @@ const handler = createMcpHandler(
           const base64Data = await renderMermaidToPng(mermaidCode);
           console.log("Rendering completed successfully!");
           
-          // Determine if this is PNG or SVG data (function may return either)
-          // Check first few bytes for PNG signature
-          const isDataPng = base64Data.startsWith('iVBOR') || base64Data.startsWith('iVBOR');
+          // Improved detection of image format
+          // PNG files start with iVBOR (base64 of PNG header)
+          // SVG data usually contains "<svg" when decoded
+          const isDataPng = base64Data.startsWith('iVBOR');
+          
+          // Decode the start of the base64 to check for SVG
+          const decodedStart = Buffer.from(base64Data.slice(0, 30), 'base64').toString('utf-8');
+          const isDataSvg = decodedStart.includes('<svg') || decodedStart.includes('<?xml');
+          
+          const mimeType = isDataPng ? "image/png" : 
+                           isDataSvg ? "image/svg+xml" : 
+                           "image/svg+xml"; // Default to SVG if unsure
+          
+          console.log(`Detected MIME type: ${mimeType}`);
           
           return {
             content: [
               { 
                 type: "image", 
                 data: base64Data,
-                mimeType: isDataPng ? "image/png" : "image/svg+xml" 
+                mimeType: mimeType
               }
             ],
           };
@@ -42,8 +53,18 @@ const handler = createMcpHandler(
           // In case of error, return the error as text
           console.error("Error in render_mermaid tool:", error);
           const errorMessage = error instanceof Error ? error.message : String(error);
+          
+          // Generate a very simple plain text diagram
+          const fallbackText = [
+            "Failed to render diagram. Here's the code:",
+            "----------------------------------------",
+            mermaidCode,
+            "----------------------------------------",
+            `Error: ${errorMessage}`
+          ].join('\n');
+          
           return {
-            content: [{ type: "text", text: `Error rendering Mermaid diagram: ${errorMessage}` }],
+            content: [{ type: "text", text: fallbackText }],
           };
         }
       }
