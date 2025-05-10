@@ -5,15 +5,16 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "vercel-build": "npm install --no-save puppeteer@23.11.1 && next build"
   },
   "dependencies": {
-    "@mermaid-js/mermaid-cli": "^11.4.2",
     "@modelcontextprotocol/sdk": "^1.11.1",
     "@vercel/mcp-adapter": "0.3.1",
     "next": "15.2.4",
-    "puppeteer": "^24.8.2",
-    "puppeteer-core": "^24.8.2",
+    "puppeteer": "^23.11.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "redis": "^4.7.0",
     "zod": "^3.24.2"
   },
