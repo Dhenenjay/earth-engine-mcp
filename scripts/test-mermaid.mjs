@@ -58,8 +58,17 @@ async function main() {
       // If we got an image back, save it to a file
       if (result.content && result.content[0] && result.content[0].type === 'image') {
         const imageData = result.content[0].data;
-        fs.writeFileSync('mermaid-output.png', Buffer.from(imageData, 'base64'));
-        console.log("Image saved to mermaid-output.png");
+        const mimeType = result.content[0].mimeType;
+        
+        // Determine the correct file extension based on MIME type
+        let fileExtension = 'png';
+        if (mimeType === 'image/svg+xml') {
+          fileExtension = 'svg';
+        }
+        
+        const outputFile = `mermaid-output.${fileExtension}`;
+        fs.writeFileSync(outputFile, Buffer.from(imageData, 'base64'));
+        console.log(`Image saved to ${outputFile}`);
       }
     } catch (error) {
       console.error("Error using Mermaid tool:", error);

@@ -21,14 +21,14 @@ const handler = createMcpHandler(
       },
       async ({ mermaidCode }) => {
         try {
-          const base64Png = await renderMermaidToPng(mermaidCode);
+          const base64Svg = await renderMermaidToPng(mermaidCode);
           
           return {
             content: [
               { 
                 type: "image", 
-                data: base64Png,
-                mimeType: "image/png"
+                data: base64Svg,
+                mimeType: "image/svg+xml"
               }
             ],
           };
