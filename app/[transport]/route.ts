@@ -15,22 +15,26 @@ const handler = createMcpHandler(
 
     server.tool(
       "render_mermaid",
-      "Render Mermaid diagram code as PNG",
+      "Render Mermaid diagram code as PNG or SVG",
       { 
         mermaidCode: z.string().describe("The Mermaid diagram code to render")
       },
       async ({ mermaidCode }) => {
         try {
           console.log("Starting Mermaid rendering process...");
-          const base64Png = await renderMermaidToPng(mermaidCode);
+          const base64Data = await renderMermaidToPng(mermaidCode);
           console.log("Rendering completed successfully!");
+          
+          // Determine if this is PNG or SVG data (function may return either)
+          // Check first few bytes for PNG signature
+          const isDataPng = base64Data.startsWith('iVBOR') || base64Data.startsWith('iVBOR');
           
           return {
             content: [
               { 
                 type: "image", 
-                data: base64Png,
-                mimeType: "image/png"
+                data: base64Data,
+                mimeType: isDataPng ? "image/png" : "image/svg+xml" 
               }
             ],
           };
@@ -52,7 +56,7 @@ const handler = createMcpHandler(
         //   description: "Echo a message",
         // },
         render_mermaid: {
-          description: "Render Mermaid diagram code as PNG",
+          description: "Render Mermaid diagram code as PNG or SVG",
         },
       },
     },

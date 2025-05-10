@@ -17,21 +17,22 @@ A simple tool that echoes back a message.
 
 ### Mermaid Diagram Renderer
 
-A tool that renders [Mermaid](https://mermaid.js.org/) code as PNG images. It accepts Mermaid diagram code and returns the rendered diagram as a PNG image.
+A tool that renders [Mermaid](https://mermaid.js.org/) code as diagrams. It accepts Mermaid diagram code and returns the rendered diagram as an image.
 
 #### Implementation
 
-The Mermaid renderer uses `@mermaid-js/mermaid-cli` to generate high-quality diagrams from Mermaid code. The implementation:
+The Mermaid renderer uses a multi-stage approach for maximum compatibility:
 
-1. Creates a temporary Mermaid file from the provided code
-2. Uses mermaid-cli with Puppeteer to render it to a PNG image
-3. Returns the image as a base64-encoded string
-4. Includes extensive error handling and automatic browser detection
+1. First, it attempts to use `@mermaid-js/mermaid-cli` to generate high-quality PNGs
+2. If that fails (e.g., in serverless environments), it falls back to client-side rendering using JSDOM and returns SVG
+3. All formats are handled transparently in the route handler
 
-For serverless environments like Vercel, the system:
-- Installs Chrome headless shell during build
-- Configures Puppeteer to use the installed Chrome
-- Includes fallback mechanisms for compatibility
+This hybrid approach ensures:
+
+- Works in local development with full Puppeteer and Chrome
+- Works in serverless Vercel deployments without browser dependencies
+- Provides graceful degradation with detailed error handling
+- Requires minimal setup for either environment
 
 #### Example Usage:
 
@@ -54,24 +55,14 @@ const result = await client.useTool("render_mermaid", {
 - After enabling Fluid compute, open `app/route.ts` and adjust `maxDuration` to 800 if you using a Vercel Pro or Enterprise account
 - [Deploy the Next.js MCP template](https://vercel.com/templates/next.js/model-context-protocol-mcp-with-next-js)
 
-### Mermaid Rendering Setup
+### Mermaid Rendering Setup for Vercel
 
 For the Mermaid diagram rendering to work correctly on Vercel:
 
-1. The `vercel-build.js` script will run during deployment to:
-   - Install Chrome headless shell for Puppeteer
-   - Set up proper permissions and configuration
-   - Create the necessary puppeteer-config.json file
-   - Test that everything works
-
-2. The `vercel.json` file includes required environment variables:
-   - `PUPPETEER_CACHE_DIR: "/tmp"` - Configures where Puppeteer looks for browsers
-   - `PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"` - Prevents duplicate Chrome downloads
-   - `NODE_OPTIONS: "--max-old-space-size=4096"` - Increases memory limit for rendering
-
-3. Local development:
-   - Run `npx puppeteer browsers install chrome-headless-shell` to install the required browser
-   - The code automatically detects Chrome's location in both local and serverless environments
+1. The `vercel-build.js` script is simplified to avoid browser installation, which doesn't work in Vercel's build environment
+2. The rendering falls back to using JSDOM with client-side mermaid.js in serverless environments
+3. No heavyweight browser installations are required, making deployment more reliable
+4. The `vercel.json` file includes minimal environment variables needed for reliable serverless execution
 
 ## Sample Client
 

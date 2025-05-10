@@ -3,17 +3,19 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import util from 'util';
+import { JSDOM } from 'jsdom';
 
 const execPromise = util.promisify(exec);
 
 /**
- * Renders a Mermaid diagram code to PNG using mermaid-cli
+ * Renders a Mermaid diagram code to PNG using mermaid-cli or falls back to simpler methods
  * @param mermaidCode The Mermaid diagram code to render
  * @returns The PNG data as a base64 string
  */
 export async function renderMermaidToPng(mermaidCode: string): Promise<string> {
+  // First, try the mermaid-cli approach
   try {
-    console.log('Rendering Mermaid diagram using mermaid-cli...');
+    console.log('Attempting to render Mermaid diagram using mermaid-cli...');
     
     // Create temp directory for files
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mermaid-'));
@@ -28,67 +30,19 @@ export async function renderMermaidToPng(mermaidCode: string): Promise<string> {
     // Path to mmdc binary in node_modules
     const mmdcPath = path.join(process.cwd(), 'node_modules', '.bin', 'mmdc');
     
-    // Create puppeteer config
+    // Create puppeteer config (simplified for serverless)
     const puppeteerConfigPath = path.join(tempDir, 'puppeteer-config.json');
     
-    // For local development, find the Chrome headless shell path
-    let executablePath;
-    
-    // Try to find Chrome headless shell in the user's cache
-    const homeDir = os.homedir();
-    const puppeteerCacheDir = path.join(homeDir, '.cache', 'puppeteer');
-    
-    if (fs.existsSync(puppeteerCacheDir)) {
-      // Look for chrome-headless-shell directory
-      const chromeHeadlessDir = path.join(puppeteerCacheDir, 'chrome-headless-shell');
-      
-      if (fs.existsSync(chromeHeadlessDir)) {
-        // Find the most recent version
-        const versions = fs.readdirSync(chromeHeadlessDir);
-        
-        if (versions.length > 0) {
-          // Get the most recent version
-          const latestVersion = versions
-            .filter(dir => fs.statSync(path.join(chromeHeadlessDir, dir)).isDirectory())
-            .sort()
-            .pop();
-          
-          if (latestVersion) {
-            // Find the executable path based on the platform
-            const platform = os.platform();
-            let execName = 'chrome-headless-shell';
-            
-            if (platform === 'win32') {
-              execName = 'chrome-headless-shell.exe';
-            }
-            
-            const possiblePaths = [
-              path.join(chromeHeadlessDir, latestVersion, 'chrome-headless-shell-mac-arm64', execName),
-              path.join(chromeHeadlessDir, latestVersion, 'chrome-headless-shell-mac-x64', execName),
-              path.join(chromeHeadlessDir, latestVersion, 'chrome-headless-shell-linux-x64', execName),
-              path.join(chromeHeadlessDir, latestVersion, 'chrome-headless-shell-win32-x64', execName),
-            ];
-            
-            for (const p of possiblePaths) {
-              if (fs.existsSync(p)) {
-                executablePath = p;
-                console.log(`Found Chrome headless shell at: ${executablePath}`);
-                break;
-              }
-            }
-          }
-        }
-      }
-    }
-    
-    // Create the puppeteer config with the executable path if found
-    const puppeteerConfig: any = {
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    // Create a simplified puppeteer config
+    const puppeteerConfig = {
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu'
+      ],
+      headless: true
     };
-    
-    if (executablePath) {
-      puppeteerConfig.executablePath = executablePath;
-    }
     
     fs.writeFileSync(puppeteerConfigPath, JSON.stringify(puppeteerConfig, null, 2));
     
@@ -97,43 +51,116 @@ export async function renderMermaidToPng(mermaidCode: string): Promise<string> {
     
     console.log(`Executing mermaid-cli command: ${command}`);
     
-    // Set environment variables for Puppeteer in serverless environment
+    // Set environment variables for serverless environment
     const customEnv: NodeJS.ProcessEnv = {
       ...process.env,
-      PUPPETEER_CACHE_DIR: homeDir ? path.join(homeDir, '.cache', 'puppeteer') : '/tmp',
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: 'true',
+      PUPPETEER_CACHE_DIR: '/tmp',
     };
     
-    // Execute command with specified environment
-    await execPromise(command, { env: customEnv });
-    
-    // Check if output file exists
-    if (!fs.existsSync(outputFile)) {
-      throw new Error('Mermaid-cli did not generate output file');
-    }
-    
-    // Read the generated PNG file
-    const pngBuffer = fs.readFileSync(outputFile);
-    
-    // Clean up temporary files
     try {
-      fs.unlinkSync(mermaidFile);
-      fs.unlinkSync(outputFile);
-      fs.unlinkSync(puppeteerConfigPath);
-      fs.rmdirSync(tempDir);
-    } catch (cleanupError) {
-      console.warn('Warning: Failed to clean up temporary files:', cleanupError);
-      // Continue anyway, not critical
+      // Execute command with specified environment
+      await execPromise(command, { env: customEnv, timeout: 15000 });
+      
+      // Check if output file exists
+      if (fs.existsSync(outputFile)) {
+        // Read the generated PNG file
+        const pngBuffer = fs.readFileSync(outputFile);
+        
+        // Clean up temporary files
+        try {
+          fs.unlinkSync(mermaidFile);
+          fs.unlinkSync(outputFile);
+          fs.unlinkSync(puppeteerConfigPath);
+          fs.rmdirSync(tempDir);
+        } catch (cleanupError) {
+          console.warn('Warning: Failed to clean up temporary files:', cleanupError);
+        }
+        
+        // Convert to base64
+        const base64Png = pngBuffer.toString('base64');
+        console.log('Successfully rendered Mermaid diagram to PNG using mermaid-cli');
+        
+        return base64Png;
+      }
+    } catch (execError) {
+      console.error('mermaid-cli execution failed:', execError);
+      // Don't throw here, let it fall through to the fallback method
+    }
+  } catch (error) {
+    console.error('Error setting up mermaid-cli:', error);
+    // Continue to fallback method
+  }
+  
+  // Fallback to a simpler approach using mermaid's output directly
+  try {
+    console.log('Falling back to simple SVG rendering approach...');
+    
+    // Use mermaid directly (serverless safe method)
+    const mermaidScript = `
+      <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        
+        mermaid.initialize({
+          startOnLoad: true,
+          theme: 'default'
+        });
+        
+        window.renderMermaid = async function() {
+          try {
+            const { svg } = await mermaid.render('mermaid-diagram', \`${mermaidCode.replace(/`/g, '\\`')}\`);
+            document.getElementById('result').textContent = svg;
+          } catch (error) {
+            document.getElementById('error').textContent = JSON.stringify(error);
+          }
+        };
+      </script>
+    `;
+    
+    // Create an HTML page with the mermaid code
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Mermaid Rendering</title>
+          ${mermaidScript}
+        </head>
+        <body>
+          <div id="mermaid-container"></div>
+          <pre id="result" style="display:none;"></pre>
+          <pre id="error" style="display:none;"></pre>
+          <script>
+            window.renderMermaid();
+          </script>
+        </body>
+      </html>
+    `;
+    
+    // Use JSDOM to execute the script
+    const dom = new JSDOM(html, {
+      runScripts: "dangerously",
+      resources: "usable",
+      pretendToBeVisual: true
+    });
+    
+    // Wait for rendering to complete
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Extract the SVG content
+    const svgContent = dom.window.document.getElementById('result')?.textContent;
+    
+    if (!svgContent) {
+      const error = dom.window.document.getElementById('error')?.textContent;
+      throw new Error(`Mermaid rendering failed: ${error || 'Unknown error'}`);
     }
     
-    // Convert to base64
-    const base64Png = pngBuffer.toString('base64');
-    console.log('Successfully rendered Mermaid diagram to PNG');
+    // For simplicity, we'll return the SVG as base64 (client can handle it as an image)
+    const svgBase64 = Buffer.from(svgContent).toString('base64');
+    console.log('Successfully rendered Mermaid diagram to SVG');
     
-    return base64Png;
-  } catch (error) {
-    console.error('Error rendering Mermaid diagram with mermaid-cli:', error);
-    
-    // Throw a detailed error message
-    throw new Error(`Failed to render Mermaid diagram: ${error instanceof Error ? error.message : String(error)}`);
+    return svgBase64;
+  } catch (fallbackError) {
+    console.error('All rendering approaches failed:', fallbackError);
+    throw new Error(`Failed to render Mermaid diagram: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`);
   }
 } 
