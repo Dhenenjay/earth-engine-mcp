@@ -1,181 +1,139 @@
-import { JSDOM } from 'jsdom';
+import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
+import util from 'util';
+
+const execPromise = util.promisify(exec);
 
 /**
- * Renders a Mermaid diagram code to PNG using server-side Mermaid rendering
+ * Renders a Mermaid diagram code to PNG using mermaid-cli
  * @param mermaidCode The Mermaid diagram code to render
  * @returns The PNG data as a base64 string
  */
 export async function renderMermaidToPng(mermaidCode: string): Promise<string> {
   try {
-    console.log('Rendering Mermaid diagram using server-side approach...');
+    console.log('Rendering Mermaid diagram using mermaid-cli...');
     
-    // Create virtual DOM environment
-    const dom = new JSDOM(`<!DOCTYPE html><html><body><div id="container"></div></body></html>`, {
-      runScripts: "dangerously",
-      resources: "usable",
-      url: "https://localhost"
-    });
+    // Create temp directory for files
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mermaid-'));
     
-    const window = dom.window;
+    // Save mermaid code to file
+    const mermaidFile = path.join(tempDir, 'diagram.mmd');
+    fs.writeFileSync(mermaidFile, mermaidCode);
     
-    // Use a safer approach for navigator
-    Object.defineProperty(window, 'navigator', {
-      value: {
-        userAgent: 'node.js',
-        language: 'en-US',
-      },
-      writable: true
-    });
+    // Output PNG file path
+    const outputFile = path.join(tempDir, 'diagram.png');
     
-    // Create a new script element and load Mermaid
-    const script = window.document.createElement('script');
-    script.textContent = `
-      window.mermaidConfig = {
-        startOnLoad: false,
-        securityLevel: 'loose',
-        theme: 'default'
-      };
-    `;
-    window.document.head.appendChild(script);
+    // Path to mmdc binary in node_modules
+    const mmdcPath = path.join(process.cwd(), 'node_modules', '.bin', 'mmdc');
     
-    // Load the mermaid library directly from CDN
-    const mermaidScript = window.document.createElement('script');
-    mermaidScript.src = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';
-    window.document.head.appendChild(mermaidScript);
+    // Create puppeteer config
+    const puppeteerConfigPath = path.join(tempDir, 'puppeteer-config.json');
     
-    // Wait for mermaid to load
-    await new Promise(resolve => {
-      mermaidScript.onload = resolve;
-      // Fallback if onload doesn't fire
-      setTimeout(resolve, 3000);
-    });
+    // For local development, find the Chrome headless shell path
+    let executablePath;
     
-    // Check if mermaid loaded
-    if (!(window as any).mermaid) {
-      throw new Error('Failed to load Mermaid library');
+    // Try to find Chrome headless shell in the user's cache
+    const homeDir = os.homedir();
+    const puppeteerCacheDir = path.join(homeDir, '.cache', 'puppeteer');
+    
+    if (fs.existsSync(puppeteerCacheDir)) {
+      // Look for chrome-headless-shell directory
+      const chromeHeadlessDir = path.join(puppeteerCacheDir, 'chrome-headless-shell');
+      
+      if (fs.existsSync(chromeHeadlessDir)) {
+        // Find the most recent version
+        const versions = fs.readdirSync(chromeHeadlessDir);
+        
+        if (versions.length > 0) {
+          // Get the most recent version
+          const latestVersion = versions
+            .filter(dir => fs.statSync(path.join(chromeHeadlessDir, dir)).isDirectory())
+            .sort()
+            .pop();
+          
+          if (latestVersion) {
+            // Find the executable path based on the platform
+            const platform = os.platform();
+            let execName = 'chrome-headless-shell';
+            
+            if (platform === 'win32') {
+              execName = 'chrome-headless-shell.exe';
+            }
+            
+            const possiblePaths = [
+              path.join(chromeHeadlessDir, latestVersion, 'chrome-headless-shell-mac-arm64', execName),
+              path.join(chromeHeadlessDir, latestVersion, 'chrome-headless-shell-mac-x64', execName),
+              path.join(chromeHeadlessDir, latestVersion, 'chrome-headless-shell-linux-x64', execName),
+              path.join(chromeHeadlessDir, latestVersion, 'chrome-headless-shell-win32-x64', execName),
+            ];
+            
+            for (const p of possiblePaths) {
+              if (fs.existsSync(p)) {
+                executablePath = p;
+                console.log(`Found Chrome headless shell at: ${executablePath}`);
+                break;
+              }
+            }
+          }
+        }
+      }
     }
     
-    console.log('Mermaid loaded, rendering diagram...');
+    // Create the puppeteer config with the executable path if found
+    const puppeteerConfig: any = {
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    };
     
-    // Render the diagram
-    const container = window.document.getElementById('container');
-    if (!container) {
-      throw new Error('Container element not found');
-    }
-    container.innerHTML = `<pre class="mermaid">${mermaidCode}</pre>`;
-    
-    // Initialize and render
-    await (window as any).mermaid.initialize((window as any).mermaidConfig);
-    await (window as any).mermaid.run();
-    
-    // Get the SVG content
-    const svgElement = window.document.querySelector('svg');
-    if (!svgElement) {
-      throw new Error('Failed to generate SVG from Mermaid diagram');
+    if (executablePath) {
+      puppeteerConfig.executablePath = executablePath;
     }
     
-    const svgContent = svgElement.outerHTML;
+    fs.writeFileSync(puppeteerConfigPath, JSON.stringify(puppeteerConfig, null, 2));
     
-    // Create temp directory if it doesn't exist
-    const tempDir = path.join(process.cwd(), 'temp');
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir);
+    // Execute the mermaid-cli command with puppeteer config
+    const command = `"${mmdcPath}" -i "${mermaidFile}" -o "${outputFile}" -b transparent -p "${puppeteerConfigPath}"`;
+    
+    console.log(`Executing mermaid-cli command: ${command}`);
+    
+    // Set environment variables for Puppeteer in serverless environment
+    const customEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      PUPPETEER_CACHE_DIR: homeDir ? path.join(homeDir, '.cache', 'puppeteer') : '/tmp',
+    };
+    
+    // Execute command with specified environment
+    await execPromise(command, { env: customEnv });
+    
+    // Check if output file exists
+    if (!fs.existsSync(outputFile)) {
+      throw new Error('Mermaid-cli did not generate output file');
     }
     
-    // Save SVG to file
-    const svgPath = path.join(tempDir, 'temp-diagram.svg');
-    fs.writeFileSync(svgPath, svgContent);
+    // Read the generated PNG file
+    const pngBuffer = fs.readFileSync(outputFile);
     
-    // Convert SVG to PNG using Sharp
-    const { default: sharp } = await import('sharp');
-    
-    console.log('Converting SVG to PNG...');
-    const pngBuffer = await sharp(svgPath)
-      .png()
-      .toBuffer();
-    
-    // Clean up temporary file
-    fs.unlinkSync(svgPath);
+    // Clean up temporary files
+    try {
+      fs.unlinkSync(mermaidFile);
+      fs.unlinkSync(outputFile);
+      fs.unlinkSync(puppeteerConfigPath);
+      fs.rmdirSync(tempDir);
+    } catch (cleanupError) {
+      console.warn('Warning: Failed to clean up temporary files:', cleanupError);
+      // Continue anyway, not critical
+    }
     
     // Convert to base64
     const base64Png = pngBuffer.toString('base64');
-    
     console.log('Successfully rendered Mermaid diagram to PNG');
     
-    // Clean up
-    window.close();
-    
     return base64Png;
-  } catch (error: unknown) {
-    console.error('Error rendering Mermaid diagram:', error);
-    
-    // Fallback to a different approach
-    try {
-      console.log('Falling back to alternative rendering approach...');
-      return await renderWithMermaidCLI(mermaidCode);
-    } catch (fallbackError) {
-      console.error('Fallback rendering also failed:', fallbackError);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to render Mermaid diagram: ${errorMessage}`);
-    }
-  }
-}
-
-/**
- * Fallback renderer using the Mermaid CLI
- */
-async function renderWithMermaidCLI(mermaidCode: string): Promise<string> {
-  try {
-    // Use the Puppeteer-based approach using mermaid-cli
-    const { default: puppeteer } = await import('puppeteer');
-    
-    // Launch headless browser
-    const browser = await puppeteer.launch({ 
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
-    
-    // Create a new page
-    const page = await browser.newPage();
-    
-    // Load Mermaid from CDN
-    await page.setContent(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-        <script>
-          mermaid.initialize({ startOnLoad: true });
-        </script>
-      </head>
-      <body>
-        <div class="mermaid">
-          ${mermaidCode}
-        </div>
-      </body>
-      </html>
-    `);
-    
-    // Wait for Mermaid to initialize and render
-    await page.waitForSelector('svg');
-    
-    // Get the rendered SVG
-    const svgHandle = await page.$('svg');
-    if (!svgHandle) {
-      throw new Error('SVG not found');
-    }
-    
-    // Take a screenshot of just the SVG
-    const pngBuffer = await svgHandle.screenshot();
-    
-    // Close the browser
-    await browser.close();
-    // Convert to base64
-    return Buffer.from(pngBuffer).toString('base64');
   } catch (error) {
-    console.error('Puppeteer rendering failed:', error);
-    throw error;
+    console.error('Error rendering Mermaid diagram with mermaid-cli:', error);
+    
+    // Throw a detailed error message
+    throw new Error(`Failed to render Mermaid diagram: ${error instanceof Error ? error.message : String(error)}`);
   }
 } 
