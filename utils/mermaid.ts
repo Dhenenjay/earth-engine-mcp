@@ -1,8 +1,8 @@
-import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
+import puppeteer from 'puppeteer';
 
 /**
  * Renders a Mermaid diagram code to PNG and returns the PNG data as a base64 string
@@ -11,70 +11,96 @@ import * as crypto from 'crypto';
  */
 export async function renderMermaidToPng(mermaidCode: string): Promise<string> {
   try {
-    // Create a temporary directory for the files
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mermaid-'));
-    console.log(`Created temp directory: ${tempDir}`);
-    
-    // Create unique filenames based on content hash
-    const hash = crypto.createHash('md5').update(mermaidCode).digest('hex');
-    const mermaidFile = path.join(tempDir, `${hash}.mmd`);
-    const outputFile = path.join(tempDir, `${hash}.png`);
-    
-    // Write the Mermaid code to a temporary file
-    fs.writeFileSync(mermaidFile, mermaidCode);
-    console.log(`Wrote Mermaid code to: ${mermaidFile}`);
-    
-    // Find the mmdc CLI path
-    let cliPath;
-    
-    // Check different potential locations
-    const possiblePaths = [
-      path.resolve('./node_modules/.bin/mmdc'),
-      path.resolve('./node_modules/@mermaid-js/mermaid-cli/node_modules/.bin/mmdc'),
-      path.resolve('./node_modules/.pnpm/@mermaid-js+mermaid-cli@11.4.2_puppeteer@24.8.2_typescript@5.8.3/node_modules/@mermaid-js/mermaid-cli/node_modules/.bin/mmdc')
-    ];
-    
-    for (const p of possiblePaths) {
-      if (fs.existsSync(p)) {
-        cliPath = p;
-        break;
+    // Clean and normalize the mermaid code
+    const cleanMermaidCode = mermaidCode.trim();
+    console.log('Rendering Mermaid diagram...');
+
+    // Start a browser instance
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+
+    try {
+      const page = await browser.newPage();
+      
+      // Set viewport to ensure diagram is properly rendered
+      await page.setViewport({
+        width: 1200,
+        height: 800,
+        deviceScaleFactor: 2, // Higher resolution
+      });
+
+      // HTML template that uses Mermaid library
+      const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+          <script>
+            mermaid.initialize({
+              startOnLoad: true,
+              theme: 'default',
+              securityLevel: 'loose',
+              themeCSS: '.node rect { fill: #fff; }',
+              logLevel: 1
+            });
+          </script>
+          <style>
+            body { 
+              background: transparent;
+              margin: 0;
+              padding: 0;
+              width: 100%;
+              height: 100%;
+            }
+            .mermaid {
+              padding: 10px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="mermaid">
+            ${cleanMermaidCode}
+          </div>
+        </body>
+      </html>`;
+
+      // Load the HTML content
+      await page.setContent(html);
+      
+      // Wait for Mermaid to render
+      await page.waitForSelector('.mermaid svg');
+      
+      // Wait a bit more to ensure rendering is complete
+      await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 1000)));
+      
+      // Get the SVG element
+      const svgElement = await page.$('.mermaid svg');
+      
+      if (!svgElement) {
+        throw new Error('SVG element not found after rendering');
       }
-    }
-    
-    if (!cliPath) {
-      // Fallback to looking for mmdc in general
-      try {
-        cliPath = execSync('which mmdc').toString().trim();
-      } catch (e) {
-        throw new Error('Could not find mmdc executable. Please make sure @mermaid-js/mermaid-cli is installed');
+      
+      // Get the bounding box of the SVG
+      const boundingBox = await svgElement.boundingBox();
+      
+      if (!boundingBox) {
+        throw new Error('Could not determine SVG dimensions');
       }
+      
+      // Take a screenshot of just the SVG element
+      const screenshot = await svgElement.screenshot({
+        type: 'png',
+        omitBackground: true, // Transparent background
+      });
+      
+      // Convert to base64
+      return Buffer.from(screenshot).toString('base64');
+    } finally {
+      // Always close the browser
+      await browser.close();
     }
-    
-    console.log(`Using mmdc CLI path: ${cliPath}`);
-    
-    // Use mmdc CLI to generate the PNG
-    const command = `"${cliPath}" -i "${mermaidFile}" -o "${outputFile}" -b transparent`;
-    console.log(`Executing command: ${command}`);
-    
-    execSync(command, { stdio: 'inherit' });
-    
-    // Check if the output file was created
-    if (!fs.existsSync(outputFile)) {
-      throw new Error(`Output file was not created at ${outputFile}`);
-    }
-    
-    console.log(`Successfully generated PNG at: ${outputFile}`);
-    
-    // Read the generated PNG file as base64
-    const pngData = fs.readFileSync(outputFile);
-    const base64Data = pngData.toString('base64');
-    
-    // Clean up the temporary files
-    fs.unlinkSync(mermaidFile);
-    fs.unlinkSync(outputFile);
-    fs.rmdirSync(tempDir);
-    
-    return base64Data;
   } catch (error: unknown) {
     console.error('Error rendering Mermaid diagram:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
