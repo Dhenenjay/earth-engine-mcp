@@ -1,6 +1,7 @@
-# Example Next.js MCP Server with Mermaid Diagram Rendering
+# Example Next.js MCP Server
 
 **Uses `@vercel/mcp-adapter`**
+
 
 ## Usage
 
@@ -18,8 +19,6 @@ A simple tool that echoes back a message.
 
 A tool that renders [Mermaid](https://mermaid.js.org/) code as PNG images. It accepts Mermaid diagram code and returns the rendered diagram as a PNG image.
 
-The implementation uses Puppeteer to render Mermaid diagrams directly in a headless browser, making it compatible with serverless environments like Vercel.
-
 #### Example Usage:
 
 ```javascript
@@ -34,46 +33,23 @@ const result = await client.useTool("render_mermaid", {
 });
 ```
 
-## Deployment Notes
+## Notes for running on Vercel
 
-### Vercel Deployment
+- To use the SSE transport, requires a Redis attached to the project under `process.env.REDIS_URL`
+- Make sure you have [Fluid compute](https://vercel.com/docs/functions/fluid-compute) enabled for efficient execution
+- After enabling Fluid compute, open `app/route.ts` and adjust `maxDuration` to 800 if you using a Vercel Pro or Enterprise account
+- [Deploy the Next.js MCP template](https://vercel.com/templates/next.js/model-context-protocol-mcp-with-next-js)
 
-This application is designed to be deployed on Vercel. To deploy:
+## Sample Client
 
-1. Make sure your project has the following dependencies:
-   - `react` and `react-dom` (required by Next.js)
-   - `@vercel/mcp-adapter` and `@modelcontextprotocol/sdk` for MCP functionality
-   - `puppeteer` for Mermaid rendering (version compatible with Vercel)
-
-2. Additional requirements:
-   - To use the SSE transport, requires a Redis attached to the project under `process.env.REDIS_URL`
-   - Make sure you have [Fluid compute](https://vercel.com/docs/functions/fluid-compute) enabled for efficient execution
-   - After enabling Fluid compute, open `app/[transport]/route.ts` and adjust `maxDuration` to 800 if you are using a Vercel Pro or Enterprise account
-
-3. Deploy with:
-   ```
-   vercel deploy
-   ```
-
-## Local Development
-
-For local development:
+`script/test-client.mjs` contains a sample client to try invocations.
 
 ```sh
-npm install
-npm run dev
+node scripts/test-client.mjs https://mcp-for-next-js.vercel.app
 ```
 
-## Sample Clients
-
-Testing the Mermaid rendering:
+For testing the Mermaid rendering specifically:
 
 ```sh
 node scripts/test-mermaid.mjs http://localhost:3000
-```
-
-General MCP client testing:
-
-```sh
-node scripts/test-client.mjs http://localhost:3000
 ```
