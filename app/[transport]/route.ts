@@ -21,19 +21,22 @@ const handler = createMcpHandler(
       },
       async ({ mermaidCode }) => {
         try {
-          const base64Svg = await renderMermaidToPng(mermaidCode);
+          console.log("Starting Mermaid rendering process...");
+          const base64Png = await renderMermaidToPng(mermaidCode);
+          console.log("Rendering completed successfully!");
           
           return {
             content: [
               { 
                 type: "image", 
-                data: base64Svg,
-                mimeType: "image/svg+xml"
+                data: base64Png,
+                mimeType: "image/png"
               }
             ],
           };
         } catch (error) {
           // In case of error, return the error as text
+          console.error("Error in render_mermaid tool:", error);
           const errorMessage = error instanceof Error ? error.message : String(error);
           return {
             content: [{ type: "text", text: `Error rendering Mermaid diagram: ${errorMessage}` }],
@@ -58,7 +61,7 @@ const handler = createMcpHandler(
     redisUrl: process.env.REDIS_URL,
     basePath: "",
     verboseLogs: true,
-    maxDuration: 60,
+    maxDuration: 120,
   }
 );
 
