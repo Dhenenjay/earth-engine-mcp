@@ -139,10 +139,25 @@ export const calculateIndex = async (
     const image = new ee.Image(imageId)
       .normalizedDifference([bandA, bandB]);
     
-    return new Promise((resolve, reject) => {
-      image.getMap(visParams, (map: any) => {
-        resolve(map);
-      });
+    return new Promise((resolve) => {
+      try {
+        image.getMap(visParams, (map: any) => {
+          // Check if map is undefined or null
+          if (!map) {
+            resolve({ 
+              error: 'INDEX_ERROR', 
+              message: 'Earth Engine returned null or undefined result. The dataset may not be accessible, bands may be invalid, or you may need to authenticate first.' 
+            });
+            return;
+          }
+          resolve(map);
+        });
+      } catch (callbackError) {
+        resolve({ 
+          error: 'INDEX_ERROR', 
+          message: `Error in index calculation callback: ${callbackError instanceof Error ? callbackError.message : String(callbackError)}` 
+        });
+      }
     });
   } catch (error) {
     return { 
@@ -170,10 +185,25 @@ export const applyCloudMask = async (
     const mask = (cloudScore.select('cloud') as any).lt(cloudThreshold);
     const maskedImage = image.updateMask(mask);
     
-    return new Promise((resolve, reject) => {
-      maskedImage.getMap(visParams, (map: any) => {
-        resolve(map);
-      });
+    return new Promise((resolve) => {
+      try {
+        maskedImage.getMap(visParams, (map: any) => {
+          // Check if map is undefined or null
+          if (!map) {
+            resolve({ 
+              error: 'CLOUD_MASK_ERROR', 
+              message: 'Earth Engine returned null or undefined result. The dataset may not be accessible or you may need to authenticate first.' 
+            });
+            return;
+          }
+          resolve(map);
+        });
+      } catch (callbackError) {
+        resolve({ 
+          error: 'CLOUD_MASK_ERROR', 
+          message: `Error in cloud mask callback: ${callbackError instanceof Error ? callbackError.message : String(callbackError)}` 
+        });
+      }
     });
   } catch (error) {
     return { 
@@ -241,10 +271,25 @@ export const createComposite = async (
         composite = collection.median();
     }
     
-    return new Promise((resolve, reject) => {
-      composite.getMap(visParams, (map: any) => {
-        resolve(map);
-      });
+    return new Promise((resolve) => {
+      try {
+        composite.getMap(visParams, (map: any) => {
+          // Check if map is undefined or null
+          if (!map) {
+            resolve({ 
+              error: 'COMPOSITE_ERROR', 
+              message: 'Earth Engine returned null or undefined result. The collection may be empty, filters may be too restrictive, or you may need to authenticate first.' 
+            });
+            return;
+          }
+          resolve(map);
+        });
+      } catch (callbackError) {
+        resolve({ 
+          error: 'COMPOSITE_ERROR', 
+          message: `Error in composite callback: ${callbackError instanceof Error ? callbackError.message : String(callbackError)}` 
+        });
+      }
     });
   } catch (error) {
     return { 
@@ -274,23 +319,37 @@ export const exportImageToDrive = async (
     const image = new ee.Image(imageId);
     const region = new ee.Geometry(exportParams.region);
     
-    const task = ee.batch.Export.image.toDrive({
-      image: image,
-      description: exportParams.description,
-      folder: exportParams.folder,
-      fileNamePrefix: exportParams.description,
-      region: region,
-      scale: exportParams.scale,
-      maxPixels: exportParams.maxPixels || 1e9
-    });
-    
-    task.start();
-    
-    return {
-      taskId: task.id,
-      status: 'STARTED',
-      description: exportParams.description
-    };
+    try {
+      const task = ee.batch.Export.image.toDrive({
+        image: image,
+        description: exportParams.description,
+        folder: exportParams.folder,
+        fileNamePrefix: exportParams.description,
+        region: region,
+        scale: exportParams.scale,
+        maxPixels: exportParams.maxPixels || 1e9
+      });
+      
+      task.start();
+      
+      if (!task || !task.id) {
+        return {
+          error: 'EXPORT_ERROR',
+          message: 'Failed to create export task. You may need to authenticate first.'
+        };
+      }
+      
+      return {
+        taskId: task.id,
+        status: 'STARTED',
+        description: exportParams.description
+      };
+    } catch (taskError) {
+      return { 
+        error: 'EXPORT_ERROR', 
+        message: `Error starting export task: ${taskError instanceof Error ? taskError.message : String(taskError)}` 
+      };
+    }
   } catch (error) {
     return { 
       error: 'EXPORT_ERROR', 
@@ -308,15 +367,65 @@ export const getExportTaskStatus = async (
   taskId: string
 ): Promise<any | EarthEngineError> => {
   try {
-    return new Promise((resolve, reject) => {
-      ee.data.getTaskStatus([taskId], (statusResponse: any) => {
-        resolve(Array.isArray(statusResponse) ? statusResponse[0] : statusResponse);
-      });
+    return new Promise((resolve) => {
+      try {
+        ee.data.getTaskStatus([taskId], (statusResponse: any) => {
+          // Check if statusResponse is undefined or null
+          if (!statusResponse) {
+            resolve({ 
+              error: 'TASK_STATUS_ERROR', 
+              message: 'Earth Engine returned null or undefined status. The task ID may be invalid or you may need to authenticate first.' 
+            });
+            return;
+          }
+          resolve(Array.isArray(statusResponse) ? statusResponse[0] : statusResponse);
+        });
+      } catch (callbackError) {
+        resolve({ 
+          error: 'TASK_STATUS_ERROR', 
+          message: `Error in task status callback: ${callbackError instanceof Error ? callbackError.message : String(callbackError)}` 
+        });
+      }
     });
   } catch (error) {
     return { 
       error: 'TASK_STATUS_ERROR', 
       message: `Error getting task status: ${error instanceof Error ? error.message : String(error)}` 
+    };
+  }
+};
+
+/**
+ * Get all active or completed Earth Engine tasks
+ * @returns Promise with list of all tasks
+ */
+export const getAllExportTasks = async (): Promise<any | EarthEngineError> => {
+  try {
+    return new Promise((resolve) => {
+      try {
+        // Use the lower-level API call to get the task list
+        ee.data.getTaskList({}, (taskList: any) => {
+          // Check if taskList is undefined or null
+          if (!taskList) {
+            resolve({ 
+              error: 'TASK_LIST_ERROR', 
+              message: 'Earth Engine returned null or undefined task list. You may need to authenticate first.' 
+            });
+            return;
+          }
+          resolve(taskList);
+        });
+      } catch (callbackError) {
+        resolve({ 
+          error: 'TASK_LIST_ERROR', 
+          message: `Error in task list callback: ${callbackError instanceof Error ? callbackError.message : String(callbackError)}` 
+        });
+      }
+    });
+  } catch (error) {
+    return { 
+      error: 'TASK_LIST_ERROR', 
+      message: `Error getting task list: ${error instanceof Error ? error.message : String(error)}` 
     };
   }
 };
@@ -412,15 +521,72 @@ export const applyExpression = async (
     const image = new ee.Image(imageId);
     const expressionResult = image.expression(expression);
     
-    return new Promise((resolve, reject) => {
-      expressionResult.getMap(visParams, (map: any) => {
-        resolve(map);
-      });
+    return new Promise((resolve) => {
+      try {
+        expressionResult.getMap(visParams, (map: any) => {
+          // Check if map is undefined or null
+          if (!map) {
+            resolve({ 
+              error: 'EXPRESSION_ERROR', 
+              message: 'Earth Engine returned null or undefined result. The expression may be invalid, the dataset may not be accessible, or you may need to authenticate first.' 
+            });
+            return;
+          }
+          resolve(map);
+        });
+      } catch (callbackError) {
+        resolve({ 
+          error: 'EXPRESSION_ERROR', 
+          message: `Error in expression callback: ${callbackError instanceof Error ? callbackError.message : String(callbackError)}` 
+        });
+      }
     });
   } catch (error) {
     return { 
       error: 'EXPRESSION_ERROR', 
       message: `Error applying expression: ${error instanceof Error ? error.message : String(error)}` 
+    };
+  }
+};
+
+/**
+ * Cancel an Earth Engine export task
+ * @param taskId ID of the export task
+ * @returns Promise with result of the cancellation
+ */
+export const cancelExportTask = async (
+  taskId: string
+): Promise<any | EarthEngineError> => {
+  try {
+    return new Promise((resolve) => {
+      try {
+        ee.data.cancelTask(taskId, (response: any) => {
+          // Check if response is undefined or null
+          if (!response) {
+            resolve({ 
+              error: 'TASK_CANCEL_ERROR', 
+              message: 'Earth Engine returned null or undefined response. The task ID may be invalid or you may need to authenticate first.' 
+            });
+            return;
+          }
+          resolve({
+            taskId,
+            success: true,
+            status: 'CANCELLED',
+            response
+          });
+        });
+      } catch (callbackError) {
+        resolve({ 
+          error: 'TASK_CANCEL_ERROR', 
+          message: `Error in cancel task callback: ${callbackError instanceof Error ? callbackError.message : String(callbackError)}` 
+        });
+      }
+    });
+  } catch (error) {
+    return { 
+      error: 'TASK_CANCEL_ERROR', 
+      message: `Error cancelling task: ${error instanceof Error ? error.message : String(error)}` 
     };
   }
 };

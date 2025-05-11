@@ -17,6 +17,14 @@ declare module '@google/earthengine' {
     function getAssetRoots(callback: (roots: any) => void): void;
     
     function getTaskStatus(ids: string[], callback: (statusResponse: any) => void): void;
+
+    export function getTaskList(arg0: {}, arg1: (taskList: any) => void) {
+      throw new Error('Function not implemented.')
+    }
+
+    export function cancelTask(taskId: string, arg1: (response: any) => void) {
+      throw new Error('Function not implemented.')
+    }
   }
   
   export function initialize(

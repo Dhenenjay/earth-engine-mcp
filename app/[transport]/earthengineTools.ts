@@ -66,10 +66,25 @@ export const getDatasetVisualization = async (
   try {
     const image = new ee.Image(datasetId);
     
-    return new Promise((resolve, reject) => {
-      image.getMap(visParams, (map: MapImageResult) => {
-        resolve(map);
-      });
+    return new Promise((resolve) => {
+      try {
+        image.getMap(visParams, (map: any) => {
+          // Check if map is undefined or null
+          if (!map) {
+            resolve({ 
+              error: 'VISUALIZATION_ERROR', 
+              message: 'Earth Engine returned null or undefined result. The dataset may not be accessible or you may need to authenticate first.' 
+            });
+            return;
+          }
+          resolve(map);
+        });
+      } catch (callbackError) {
+        resolve({ 
+          error: 'VISUALIZATION_ERROR', 
+          message: `Error in visualization callback: ${callbackError instanceof Error ? callbackError.message : String(callbackError)}` 
+        });
+      }
     });
   } catch (error) {
     return { 
@@ -88,10 +103,25 @@ export const getImageInfo = async (datasetId: string): Promise<any | EarthEngine
   try {
     const image = new ee.Image(datasetId);
     
-    return new Promise((resolve, reject) => {
-      image.getInfo((info: any) => {
-        resolve(info);
-      });
+    return new Promise((resolve) => {
+      try {
+        image.getInfo((info: any) => {
+          // Check if info is undefined or null
+          if (!info) {
+            resolve({ 
+              error: 'IMAGE_INFO_ERROR', 
+              message: 'Earth Engine returned null or undefined info. The dataset may not be accessible or you may need to authenticate first.' 
+            });
+            return;
+          }
+          resolve(info);
+        });
+      } catch (callbackError) {
+        resolve({ 
+          error: 'IMAGE_INFO_ERROR', 
+          message: `Error in getInfo callback: ${callbackError instanceof Error ? callbackError.message : String(callbackError)}` 
+        });
+      }
     });
   } catch (error) {
     return { 
@@ -117,14 +147,29 @@ export const computeImageStats = async (
     const image = new ee.Image(datasetId);
     const region = new ee.Geometry(geometry);
     
-    return new Promise((resolve, reject) => {
-      image.reduceRegion({
-        reducer: ee.Reducer.mean(),
-        geometry: region,
-        scale: scale
-      }).getInfo((stats: any) => {
-        resolve(stats);
-      });
+    return new Promise((resolve) => {
+      try {
+        image.reduceRegion({
+          reducer: ee.Reducer.mean(),
+          geometry: region,
+          scale: scale
+        }).getInfo((stats: any) => {
+          // Check if stats is undefined or null
+          if (!stats) {
+            resolve({ 
+              error: 'STATS_ERROR', 
+              message: 'Earth Engine returned null or undefined stats. The dataset may not be accessible, the region might be invalid, or you may need to authenticate first.' 
+            });
+            return;
+          }
+          resolve(stats);
+        });
+      } catch (callbackError) {
+        resolve({ 
+          error: 'STATS_ERROR', 
+          message: `Error in reduceRegion callback: ${callbackError instanceof Error ? callbackError.message : String(callbackError)}` 
+        });
+      }
     });
   } catch (error) {
     return { 
@@ -141,10 +186,25 @@ export const computeImageStats = async (
  */
 export const searchDatasets = async (query: string): Promise<any | EarthEngineError> => {
   try {
-    return new Promise((resolve, reject) => {
-      ee.data.getAssetRoots((roots: any) => {
-        resolve(roots);
-      });
+    return new Promise((resolve) => {
+      try {
+        ee.data.getAssetRoots((roots: any) => {
+          // Check if roots is undefined or null
+          if (!roots) {
+            resolve({ 
+              error: 'SEARCH_ERROR', 
+              message: 'Earth Engine returned null or undefined results. You may need to authenticate first.' 
+            });
+            return;
+          }
+          resolve(roots);
+        });
+      } catch (callbackError) {
+        resolve({ 
+          error: 'SEARCH_ERROR', 
+          message: `Error in getAssetRoots callback: ${callbackError instanceof Error ? callbackError.message : String(callbackError)}` 
+        });
+      }
     });
   } catch (error) {
     return { 

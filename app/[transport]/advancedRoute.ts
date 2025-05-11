@@ -22,6 +22,8 @@ import {
   // Export
   exportImageToDrive,
   getExportTaskStatus,
+  getAllExportTasks,
+  cancelExportTask,
   
   // Schemas
   PrivateKeySchema,
@@ -555,6 +557,86 @@ const handler = createMcpHandler(
         }
       }
     );
+
+    // Tool to list all Earth Engine tasks
+    server.tool(
+      "earthengine_list_tasks",
+      "Get a list of all Earth Engine export tasks",
+      {},
+      async () => {
+        try {
+          const result = await getAllExportTasks();
+          
+          if ('error' in result) {
+            return {
+              content: [{ type: "text", text: `Error: ${result.message}` }],
+            };
+          }
+          
+          return {
+            content: [
+              { 
+                type: "text", 
+                text: `Earth Engine tasks:` 
+              },
+              {
+                type: "text",
+                text: JSON.stringify(result, null, 2)
+              }
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              { 
+                type: "text", 
+                text: `Error listing tasks: ${error instanceof Error ? error.message : String(error)}` 
+              }
+            ],
+          };
+        }
+      }
+    );
+
+    // Tool to cancel an Earth Engine task
+    server.tool(
+      "earthengine_cancel_task",
+      "Cancel a running Earth Engine export task",
+      { taskId: TaskIdSchema },
+      async ({ taskId }) => {
+        try {
+          const result = await cancelExportTask(taskId);
+          
+          if ('error' in result) {
+            return {
+              content: [{ type: "text", text: `Error: ${result.message}` }],
+            };
+          }
+          
+          return {
+            content: [
+              { 
+                type: "text", 
+                text: `Task ${taskId} cancelled successfully.` 
+              },
+              {
+                type: "text",
+                text: JSON.stringify(result, null, 2)
+              }
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              { 
+                type: "text", 
+                text: `Error cancelling task: ${error instanceof Error ? error.message : String(error)}` 
+              }
+            ],
+          };
+        }
+      }
+    );
   },
   {
     capabilities: {
@@ -594,6 +676,12 @@ const handler = createMcpHandler(
         },
         earthengine_task_status: {
           description: "Get the status of an Earth Engine export task",
+        },
+        earthengine_list_tasks: {
+          description: "Get a list of all Earth Engine export tasks",
+        },
+        earthengine_cancel_task: {
+          description: "Cancel a running Earth Engine export task",
         },
       },
     },
