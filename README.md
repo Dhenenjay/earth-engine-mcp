@@ -2,6 +2,7 @@
 
 **Uses `@vercel/mcp-adapter`**
 <img width="1658" alt="image" src="https://github.com/user-attachments/assets/28f1e354-5182-4f2d-91c5-c2c87de6ed79" />
+<img width="1661" alt="image" src="https://github.com/user-attachments/assets/539e4de7-a6a7-4ac5-8554-f87bb6d6c4c0" />
 
 
 ## Usage
