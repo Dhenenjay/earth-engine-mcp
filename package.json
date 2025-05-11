@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test-earthengine": "node scripts/test-earthengine.mjs"
+    "test-earthengine": "node scripts/test-earthengine.mjs",
+    "test-advanced-earthengine": "node scripts/test-advanced-earthengine.mjs"
   },
   "dependencies": {
     "@google/earthengine": "^1.5.14",

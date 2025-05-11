@@ -26,6 +26,8 @@ Before using these tools, you need to:
 
 This private key is used with the `earthengine_initialize` tool to authenticate with Earth Engine.
 
+> **IMPORTANT:** The service account key should be provided as a **JSON string**, not a file path. This allows the tool to be used directly in an AI assistant context without requiring local file access.
+
 ## Basic Tools
 
 ### 1. earthengine_initialize
@@ -33,11 +35,12 @@ This private key is used with the `earthengine_initialize` tool to authenticate 
 Initialize and authenticate with Google Earth Engine.
 
 **Parameters:**
-- `privateKeyJson`: JSON string containing the service account private key
+- `privateKeyJson`: JSON string containing the service account private key (not a file path)
 
 **Example:**
 ```javascript
 // This is an example of how an AI assistant would call this tool
+// with the actual service account JSON content as a string
 earthengine_initialize({
   privateKeyJson: "{\"type\":\"service_account\",\"project_id\":\"your-project-id\",\"private_key_id\":\"...\",\"private_key\":\"...\"}"
 })
